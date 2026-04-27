@@ -1,0 +1,46 @@
+# Skills index. The SkillManager reads this file at startup.
+#
+# Each entry:
+#   name:      stable id (used in config.skills.auto_load and triggers)
+#   path:      file path relative to the skills dir
+#   auto_load: if true, always injected into the system prompt
+#   triggers:  list of trigger names; the skill is injected only when one
+#              of these triggers is active for the current turn.
+#              Built-in triggers: "chat" (text reply), "voice" (voice reply).
+#              Custom triggers: "on_command:<name>" for slash-command-bound skills.
+
+skills:
+  - name: core-protocol
+    path: core-protocol.md
+    auto_load: true
+    triggers: []
+
+  - name: personality
+    path: personality.md
+    auto_load: true
+    triggers: []
+
+  - name: humanize
+    path: humanize.md
+    auto_load: true
+    triggers: []
+
+  - name: memory-maintenance
+    path: memory-maintenance.md
+    auto_load: true
+    triggers: []
+
+  - name: attachments
+    path: attachments.md
+    auto_load: true
+    triggers: []
+
+  - name: telegram-style
+    path: telegram-style.md
+    auto_load: false
+    triggers: [chat]
+
+  - name: voice-style
+    path: voice-style.md
+    auto_load: false
+    triggers: [voice]

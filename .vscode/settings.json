@@ -1,0 +1,35 @@
+{
+  // Hide noise from the Explorer & quick-open. Files still exist on disk.
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.egg-info": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/.mypy_cache": true,
+    ".venv": true,
+    "data": true,
+    "memory_test_tmp": true,
+    "build": true,
+    "dist": true,
+    ".coverage": true,
+    "htmlcov": true,
+    "**/.DS_Store": true
+  },
+  // Keep search fast and signal-rich.
+  "search.exclude": {
+    "**/.venv": true,
+    "**/__pycache__": true,
+    "**/*.egg-info": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "data": true,
+    "docs/openapi.json": true
+  },
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests"],
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  }
+}

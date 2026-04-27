@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtualenv
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Editor
+.idea/
+*.swp
+.DS_Store
+# (.vscode/settings.json is committed for shared workspace config)
+
+# Test / lint cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Models cache
+models/
+ollama_cache/
+
+# User config (only example is committed)
+config.yaml
+
+# Memory: per-deployment, do not commit (except .gitkeep)
+.ivo/memory/*
+!.ivo/memory/.gitkeep

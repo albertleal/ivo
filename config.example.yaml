@@ -1,0 +1,95 @@
+# ivo — example configuration
+# Copy to config.yaml and edit. Secrets come from .env via ${VAR} substitution.
+
+telegram:
+  token: ${TELEGRAM_BOT_TOKEN}
+  admin_chat_id: ${TELEGRAM_CHAT_ID}
+  long_poll_timeout: 30
+
+api:
+  enable: true
+  host: 0.0.0.0
+  port: 8085
+  # Whitelist of client IPs allowed to call the API. Default = loopback only
+  # (only processes on the same host can hit /send, /models, /health).
+  # Set to [] to disable the gate entirely (open to anyone the host is
+  # reachable from — only do this on a trusted LAN).
+  allowed_ips: ["127.0.0.1", "::1"]
+
+adapters:
+  copilot:
+    enabled: true
+    binary: copilot                  # path or name on $PATH
+    default_model: claude-sonnet-4.6
+    # Optional: run `copilot` from a specific working directory so the CLI
+    # picks up that repo's context (.github/agents, files…).
+    # cwd: /abs/path/to/your/project
+    aliases:
+      opus:   claude-opus-4.7
+      sonnet: claude-sonnet-4.6
+      haiku:  claude-haiku-4.5
+      gpt5:   gpt-5.2
+      codex:  gpt-5.3-codex
+
+  ollama:
+    enabled: false
+    host: http://localhost:11434
+    # When true, route chat through `ollama launch copilot --model <id>`
+    # so the model gets GitHub Copilot CLI's full tool runtime
+    # (file/bash/grep/web/task) instead of plain /api/chat.
+    # See: https://docs.ollama.com/integrations/copilot-cli
+    # Requires both `ollama` and `copilot` binaries on PATH.
+    via_copilot: false
+    # ollama_binary: ollama        # override if not on PATH
+    # cwd: /abs/path/to/your/repo  # only honored when via_copilot=true
+    # When `aliases` is set, ONLY those models are exposed — pin cloud or
+    # local ids here as you like. Leave the dict empty to expose every
+    # model the daemon reports. With via_copilot=true, aliases are
+    # trusted directly (cloud ids don't need to be pre-pulled).
+    aliases:
+      kimi:   kimi-k2.5:cloud
+      glm:    glm-5:cloud
+      qwen:   qwen3.5
+      gemma:  gemma2:9b
+
+defaults:
+  # Which adapter "wins" when picking the initial model for a new session.
+  adapter: copilot
+
+session:
+  backend: sqlite                    # sqlite | json | memory
+  path: ./data/sessions.db
+
+logging:
+  level: INFO
+
+# ── Orchestration layer ──────────────────────────────────────────────────────
+# All bundled persona/skills/agents/memory live under .github/ — same shape
+# the bot looks for inside any host workspace. Comment out a block to disable
+# that feature; the bot falls back to a direct adapter call.
+
+skills:
+  dir: ./.github/skills
+  # If non-empty, this list overrides meta.yaml's auto_load flags.
+  # Leave empty to trust the skills/meta.yaml defaults.
+  auto_load: []
+
+memory:
+  dir: ./.ivo/memory
+  per_user: false        # false = one shared memory file per agent
+  max_chars: 4000
+  # If true AND agents.workspace_path is set, memory files live in
+  # <workspace_path>/.ivo/memory/ instead of `dir`.
+  use_workspace: false
+
+agents:
+  dir: ./.github/agents
+  # Path to a host workspace whose `.github/agents/*.md` and
+  # `.github/memory/` should be merged on top of the bundled ones. Default
+  # is "~" — the user's home directory — so any `~/.github/agents/` you
+  # keep there is auto-picked-up. Set to a project path to bind the bot
+  # to a specific repo. Set to null to use bundled-only.
+  workspace_path: "~"
+  front_door: chat       # bundled fallback agent (.github/agents/chat.agent.md)
+  max_delegation_depth: 3
+  delegation_mode: splice  # splice | replace
