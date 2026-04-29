@@ -72,22 +72,30 @@ def _format_status(data: dict) -> str | None:
 def _extract_text(events: list[dict]) -> str:
     """Stitch the final assistant text out of a parsed JSONL event stream."""
     messages: list[str] = []
+    reasoning_fallback: list[str] = []
     summary: str | None = None
     for ev in events:
         etype = ev.get("type", "")
         data = ev.get("data", {})
         if etype == "assistant.message":
-            # Cloud models (qwen-cloud, deepseek-cloud) often put content in
-            # reasoningText/encryptedContent when content is empty.
             content = data.get("content", "")
-            if not content or not content.strip():
-                content = data.get("reasoningText", "") or data.get("encryptedContent", "")
             if content and content.strip():
                 messages.append(content.strip())
+            else:
+                # Cloud models (qwen-cloud, deepseek-cloud) sometimes put the
+                # reply in reasoningText/encryptedContent. Keep these aside
+                # and only use them if no real `content` event ever shows up;
+                # otherwise we'd leak chain-of-thought from reasoning models
+                # like Claude/Opus that emit a separate reasoning event.
+                rt = data.get("reasoningText", "") or data.get("encryptedContent", "")
+                if rt and rt.strip():
+                    reasoning_fallback.append(rt.strip())
         elif etype == "session.task_complete":
             s = data.get("summary", "")
             if s and s.strip():
                 summary = s.strip()
+    if not messages and reasoning_fallback:
+        messages = reasoning_fallback
     # Drop short intermediate "status" messages the Copilot CLI emits between
     # tool calls (e.g. "Working on it…"), but only when there is at least one
     # substantive message to keep. Otherwise a legitimately short final reply
