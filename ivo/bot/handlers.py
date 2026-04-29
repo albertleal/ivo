@@ -187,6 +187,17 @@ async def handle_select_model(ctx: BotContext, user_id: int, alias: str) -> str:
     if cmd is None:
         return f"Unknown model: /{alias}. Try /models."
     ctx.sessions.set_model(user_id, cmd.provider, cmd.model_id)
+    
+    # Auto-select the only available agent to skip unnecessary prompts.
+    agent_names = ctx.agent_names or []
+    if len(agent_names) == 1:
+        ctx.sessions.set_agent(user_id, agent_names[0])
+        return (
+            f"✓ model = {cmd.display_name} ({cmd.provider})\n"
+            f"✓ agent = {agent_names[0]} (auto-selected)\n"
+            f"{_current_state(ctx, user_id)}"
+        )
+    
     return (
         f"✓ model = {cmd.display_name} ({cmd.provider})\n\n"
         + _render_agent_list(ctx)
