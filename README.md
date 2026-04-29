@@ -241,6 +241,36 @@ Or:
 python -m ivo --config config.yaml
 ```
 
+Or supervise with pm2 (recommended for unattended runs):
+
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 logs ivo
+```
+
+### Logs
+
+Logs use a single stderr handler with the format `<ts> [logger] LEVEL: msg`.
+
+- Level: controlled by `logging.level` in `config.yaml`, overridable per-run
+  with the `LOG_LEVEL` env var (`ERROR`, `WARNING`, `INFO`, `DEBUG`). The pm2
+  `ecosystem.config.js` ships with `LOG_LEVEL=ERROR` so steady-state output
+  stays quiet — flip to `INFO`/`DEBUG` and `pm2 restart ivo --update-env`
+  when you need to trace a request.
+- Noisy libraries (`httpx`, `httpcore`, `telegram`, `uvicorn.access`) are
+  pinned to `WARNING` so ivo's own records stay readable.
+- Files (pm2 only): `~/Library/Logs/ivo/ivo.{out,err}.log` on macOS,
+  `~/.local/state/ivo/log/...` elsewhere. Rotation is handled by
+  `pm2-logrotate`:
+
+  ```bash
+  pm2 install pm2-logrotate
+  pm2 set pm2-logrotate:max_size 10M
+  pm2 set pm2-logrotate:retain 7
+  pm2 set pm2-logrotate:compress true
+  ```
+
 ## Prerequisites
 
 - Python 3.11+

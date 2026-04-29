@@ -12,6 +12,20 @@
 // Notes:
 //   - Adjust `cwd` and `interpreter` if your venv lives elsewhere.
 //   - Secrets come from .env (loaded by the app), not from this file.
+//   - Logs go to the OS-conventional location and are rotated by the
+//     `pm2-logrotate` module — install once with:
+//         pm2 install pm2-logrotate
+//         pm2 set pm2-logrotate:max_size 10M
+//         pm2 set pm2-logrotate:retain 7
+//         pm2 set pm2-logrotate:compress true
+
+const path = require("path");
+const os = require("os");
+
+// macOS convention: ~/Library/Logs/<app>. Other OSes: ~/.local/state/<app>/log.
+const LOG_DIR = process.platform === "darwin"
+  ? path.join(os.homedir(), "Library", "Logs", "ivo")
+  : path.join(os.homedir(), ".local", "state", "ivo", "log");
 
 module.exports = {
   apps: [
@@ -27,8 +41,13 @@ module.exports = {
       kill_timeout: 10000,
       restart_delay: 2000,
       watch: false,
+      out_file: path.join(LOG_DIR, "ivo.out.log"),
+      error_file: path.join(LOG_DIR, "ivo.err.log"),
+      merge_logs: true,
+      time: true,
       env: {
-        PYTHONUNBUFFERED: "1"
+        PYTHONUNBUFFERED: "1",
+        LOG_LEVEL: "ERROR",
       },
     },
   ],

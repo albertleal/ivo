@@ -77,14 +77,24 @@ def _extract_text(events: list[dict]) -> str:
         etype = ev.get("type", "")
         data = ev.get("data", {})
         if etype == "assistant.message":
+            # Cloud models (qwen-cloud, deepseek-cloud) often put content in
+            # reasoningText/encryptedContent when content is empty.
             content = data.get("content", "")
+            if not content or not content.strip():
+                content = data.get("reasoningText", "") or data.get("encryptedContent", "")
             if content and content.strip():
                 messages.append(content.strip())
         elif etype == "session.task_complete":
             s = data.get("summary", "")
             if s and s.strip():
                 summary = s.strip()
-    parts = [m for m in messages if len(m) > 20]
+    # Drop short intermediate "status" messages the Copilot CLI emits between
+    # tool calls (e.g. "Working on it…"), but only when there is at least one
+    # substantive message to keep. Otherwise a legitimately short final reply
+    # like "Hola" or "Hello!" (common from ollama-copilot one-shots) would be
+    # silently swallowed and surfaced as an empty reply.
+    long_parts = [m for m in messages if len(m) > 20]
+    parts = long_parts if long_parts else list(messages)
     if summary and (not parts or parts[-1] != summary):
         parts.append(summary)
     return "\n\n".join(parts)

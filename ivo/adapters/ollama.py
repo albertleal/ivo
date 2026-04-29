@@ -192,7 +192,9 @@ class OllamaAdapter(Adapter):
             yield f"[ollama error] {self.ollama_binary!r} not on PATH"
             return
 
-        prompt = self._render_prompt_for_copilot(messages)
+        prompt = self._render_prompt_for_copilot(
+            self._patch_messages_for_model(model, messages)
+        )
         cmd = [
             self.ollama_binary, "launch", "copilot",
             "--model", model,
@@ -202,7 +204,14 @@ class OllamaAdapter(Adapter):
             "--allow-all",
             "-p", prompt,
         ]
-        log.debug("ollama launch copilot cmd: %s (cwd=%s)", cmd, self.cwd)
+        # INFO so the exact model id sent to `ollama launch copilot` is
+        # visible in console logs without flipping to DEBUG. Critical when
+        # debugging why a given cloud model (deepseek, gemma, …) fails.
+        log.info(
+            "ollama-copilot launch model=%s binary=%s cwd=%s",
+            model, self.ollama_binary, self.cwd,
+        )
+        log.debug("ollama-copilot full cmd: %s", cmd)
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -262,8 +271,25 @@ class OllamaAdapter(Adapter):
 
         if proc.returncode and proc.returncode != 0:
             err = stderr.decode("utf-8", errors="replace").strip()
+            # Surface the failure in the console as well as in chat — we
+            # were previously losing the stderr because it was only
+            # forwarded to the user reply.
+            log.error(
+                "ollama-copilot failed model=%s rc=%s stderr=%s",
+                model, proc.returncode, err or "<empty>",
+            )
             yield f"[ollama-copilot error rc={proc.returncode}] {err}"
             return
+        # Even on success, surface stderr at WARNING if the subprocess
+        # printed anything — cloud model deprecation / rate-limit notices
+        # arrive here.
+        if stderr:
+            stderr_text = stderr.decode("utf-8", errors="replace").strip()
+            if stderr_text:
+                log.warning(
+                    "ollama-copilot stderr (rc=0) model=%s: %s",
+                    model, stderr_text,
+                )
 
         events: list[dict] = []
         for line in raw_lines:
@@ -272,6 +298,22 @@ class OllamaAdapter(Adapter):
             except json.JSONDecodeError:
                 continue
         text = _extract_text(events)
+        log.info(
+            "ollama-copilot finished model=%s rc=%s raw_lines=%d events=%d text_chars=%d",
+            model, proc.returncode, len(raw_lines), len(events), len(text or ""),
+        )
+        if not text:
+            # Empty reply — surface the last few raw events + final stderr
+            # snippet so we can see WHY the model produced nothing (auth
+            # error event, rate limit, abort, etc.).
+            tail_events = events[-5:] if events else []
+            tail_raw = raw_lines[-5:] if raw_lines else []
+            log.warning(
+                "ollama-copilot empty reply model=%s tail_events=%s tail_raw=%s",
+                model, tail_events, tail_raw,
+            )
+            yield f"[ollama-copilot empty reply] model={model} (see logs)"
+            return
         if text:
             yield text
 
@@ -286,3 +328,57 @@ class OllamaAdapter(Adapter):
             else:
                 parts.append(f"[assistant] {m.content}")
         return "\n\n".join(parts)
+
+    # Some cloud models (notably deepseek-v3.1) default to "agentic" mode
+    # under `ollama launch copilot` and try to satisfy every turn with tool
+    # calls (report_intent, view, …) instead of producing a user-visible
+    # reply. Empirically, prepending a strong "reply in plain text"
+    # directive to the system prompt AND appending the same directive to
+    # the last user turn makes the model behave like the other cloud
+    # models. We only patch models that need it so we don't encourage the
+    # well-behaved models to leak tool-call JSON.
+    _MODELS_NEEDING_PLAINTEXT_HINT = ("deepseek",)
+    _PLAINTEXT_HINT_SYSTEM = (
+        "IMPORTANT — reply contract: respond directly to the user with a "
+        "plain-text assistant message. Do NOT call any tool (no "
+        "`report_intent`, no `view`, no file/bash tools) unless the user "
+        "explicitly asks for an action that requires it. Every turn must "
+        "end with a normal assistant text reply, never with only tool "
+        "calls."
+    )
+    _PLAINTEXT_HINT_USER_SUFFIX = (
+        "\n\n(Answer in plain text directly. Do not call tools.)"
+    )
+
+    @classmethod
+    def _patch_messages_for_model(
+        cls,
+        model: str,
+        messages: list[Message],
+    ) -> list[Message]:
+        mlow = model.lower()
+        if not any(tag in mlow for tag in cls._MODELS_NEEDING_PLAINTEXT_HINT):
+            return messages
+        patched: list[Message] = []
+        injected = False
+        for m in messages:
+            if not injected and m.role == "system":
+                patched.append(Message(
+                    role="system",
+                    content=cls._PLAINTEXT_HINT_SYSTEM + "\n\n" + m.content,
+                ))
+                injected = True
+            else:
+                patched.append(m)
+        if not injected:
+            patched.insert(0, Message(role="system", content=cls._PLAINTEXT_HINT_SYSTEM))
+        # Append directive to the last user message — last-instruction-wins
+        # carries more weight with reasoning-first models.
+        for i in range(len(patched) - 1, -1, -1):
+            if patched[i].role == "user":
+                patched[i] = Message(
+                    role="user",
+                    content=patched[i].content + cls._PLAINTEXT_HINT_USER_SUFFIX,
+                )
+                break
+        return patched

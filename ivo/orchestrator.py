@@ -196,8 +196,11 @@ class Orchestrator:
         messages.extend(history)
         messages.append(Message(role="user", content=user_text))
 
-        log.debug(
-            "agent=%s depth=%d adapter=%s model=%s skills_chars=%d mem_chars=%d",
+        # INFO so each turn's routing (which agent → which adapter/model) is
+        # visible in console logs. Useful when debugging why a /alias request
+        # ended up on the wrong backend.
+        log.info(
+            "dispatch agent=%s depth=%d adapter=%s model=%s skills_chars=%d mem_chars=%d",
             agent_name,
             depth,
             adapter_name,
