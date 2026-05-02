@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
 
@@ -87,6 +87,47 @@ class AgentsConfig(BaseModel):
     delegation_mode: str = "splice"  # "splice" | "replace"
 
 
+class WorkspacesConfig(BaseModel):
+    # Named workspace roots. Example:
+    # workspaces:
+    #   active: ivo
+    #   paths:
+    #     root: /Users/name
+    #     ivo: /Users/name/Developer/ivo
+    #     eltomatic: /Users/name/Developer/eltomatic
+    paths: dict[str, str] = Field(default_factory=dict)
+    # Selected workspace key from `paths`.
+    active: str | None = None
+    # Keep adapter subprocess cwd pinned to the active workspace.
+    sync_adapter_cwd: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_shorthand(cls, data: Any) -> Any:
+        """Allow shorthand form:
+
+        workspaces:
+          active: ivo
+          root: /Users/name
+          ivo: /Users/name/Developer/ivo
+        """
+        if not isinstance(data, dict):
+            return data
+        if "paths" in data and isinstance(data.get("paths"), dict):
+            return data
+        reserved = {"active", "sync_adapter_cwd"}
+        paths = {
+            k: v
+            for k, v in data.items()
+            if k not in reserved and isinstance(v, str)
+        }
+        out = dict(data)
+        out["paths"] = paths
+        for k in paths:
+            out.pop(k, None)
+        return out
+
+
 class Config(BaseModel):
     telegram: TelegramConfig
     api: APIConfig = Field(default_factory=APIConfig)
@@ -97,6 +138,37 @@ class Config(BaseModel):
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
+    workspaces: WorkspacesConfig = Field(default_factory=WorkspacesConfig)
+
+    def workspace_paths(self) -> dict[str, str]:
+        """Return normalized workspace map (legacy-aware)."""
+        out = {
+            name: os.path.expanduser(path)
+            for name, path in (self.workspaces.paths or {}).items()
+            if isinstance(path, str) and path.strip()
+        }
+        # Backward compatibility: if no workspace map is configured, expose
+        # the legacy single workspace path under `default`.
+        if not out and self.agents.workspace_path:
+            out["default"] = os.path.expanduser(self.agents.workspace_path)
+        return out
+
+    def active_workspace_name(self) -> str | None:
+        """Resolve the currently active workspace key, if any."""
+        paths = self.workspace_paths()
+        if not paths:
+            return None
+        active = self.workspaces.active
+        if active and active in paths:
+            return active
+        return next(iter(paths))
+
+    def active_workspace_path(self) -> str | None:
+        """Resolve the currently active workspace path, if any."""
+        name = self.active_workspace_name()
+        if not name:
+            return None
+        return self.workspace_paths().get(name)
 
 
 # ── Loader ───────────────────────────────────────────────────────────────────

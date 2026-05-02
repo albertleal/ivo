@@ -16,13 +16,23 @@ api:
   # reachable from — only do this on a trusted LAN).
   allowed_ips: ["127.0.0.1", "::1"]
 
+workspaces:
+  # Active workspace key from `paths`.
+  active: root
+  # Keep adapter subprocess cwd aligned with the active workspace.
+  sync_adapter_cwd: true
+  # Named workspace roots. Switch at runtime with `/workspace <name>`.
+  paths:
+    root: /Users/you
+    ivo: /Users/you/Developer/ivo
+
 adapters:
   copilot:
     enabled: true
     binary: copilot                  # path or name on $PATH
     default_model: claude-sonnet-4.6
-    # Optional: run `copilot` from a specific working directory so the CLI
-    # picks up that repo's context (.github/agents, files…).
+    # Optional static cwd. When workspaces.sync_adapter_cwd=true, this value
+    # is overridden at runtime by the selected workspace path.
     # cwd: /abs/path/to/your/project
     aliases:
       opus:   claude-opus-4.7
@@ -41,6 +51,8 @@ adapters:
     # Requires both `ollama` and `copilot` binaries on PATH.
     via_copilot: false
     # ollama_binary: ollama        # override if not on PATH
+    # Optional static cwd. When workspaces.sync_adapter_cwd=true, this value
+    # is overridden at runtime by the selected workspace path.
     # cwd: /abs/path/to/your/repo  # only honored when via_copilot=true
     # When `aliases` is set, ONLY those models are exposed — pin cloud or
     # local ids here as you like. Leave the dict empty to expose every
@@ -84,11 +96,7 @@ memory:
 
 agents:
   dir: ./.github/agents
-  # Path to a host workspace whose `.github/agents/*.md` and
-  # `.github/memory/` should be merged on top of the bundled ones. Default
-  # is "~" — the user's home directory — so any `~/.github/agents/` you
-  # keep there is auto-picked-up. Set to a project path to bind the bot
-  # to a specific repo. Set to null to use bundled-only.
+  # Backward-compatible fallback. Prefer `workspaces.paths` + `workspaces.active`.
   workspace_path: "~"
   front_door: chat       # bundled fallback agent (.github/agents/chat.agent.md)
   max_delegation_depth: 3

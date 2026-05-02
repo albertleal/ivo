@@ -362,6 +362,7 @@ Main sections:
 - `skills`: skill directory and auto-load rules
 - `memory`: memory directory, truncation, per-user mode
 - `agents`: agent directory, workspace path, front-door agent, delegation depth
+- `workspaces`: named workspace roots, active workspace, runtime cwd sync
 
 ## Built-in commands
 
@@ -372,6 +373,8 @@ Main sections:
 - `/voice` toggles voice replies
 - `/stop` interrupts the current response
 - `/clear` clears chat history
+- `/workspace` lists/switches named workspaces
+- `/w<name>` switches workspace in one tap (for example `/wivo`)
 
 Everything else is treated as a normal prompt.
 
@@ -405,9 +408,13 @@ tools: []
 
 ## Workspace mode
 
-When `agents.workspace_path` is set, IVO loads agents from that workspace's `.github/agents/` and layers them on top of the bundled defaults.
+Configure named workspaces in `workspaces.paths`, pick the boot workspace with `workspaces.active`, and switch live with `/workspace`.
 
-When `memory.use_workspace: true` is also enabled, memory files move into that workspace as well. This makes it easy to bind the bot to a specific repo and give it repo-specific skills, memory, and behavior.
+`/workspace` now prints clickable quick commands for each configured workspace (for example `/wroot`, `/wivo`, `/weltomatic`) so you can switch without typing names.
+
+When a workspace is active, IVO loads agents from that workspace's `.github/agents/` and layers them on top of the bundled defaults.
+
+When `memory.use_workspace: true` is also enabled, memory files move into that workspace as well. Session state is namespaced per workspace, so switching back restores the last adapter/model/agent used there.
 
 ## HTTP API
 

@@ -10,6 +10,7 @@ import uvicorn
 from .adapters import Adapter, ModelInfo, build_adapters
 from .agents import AgentRegistry
 from .bot import BotContext, build_catalog
+from .bot.handlers import _apply_workspace_runtime
 from .bot.poller import run_polling
 from .config import Config
 from .memory import MemoryStore
@@ -55,6 +56,11 @@ def _resolve_default_model(
 
 async def run(cfg: Config) -> None:
     """Boot adapters, build context, run bot + api together."""
+    active_ws_name = cfg.active_workspace_name() or "default"
+    active_ws_path = cfg.active_workspace_path()
+    if active_ws_path:
+        cfg.agents.workspace_path = active_ws_path
+
     # 1. Build adapters from config.
     adapters = build_adapters(cfg.adapters)
     if not adapters:
@@ -77,8 +83,11 @@ async def run(cfg: Config) -> None:
         path=cfg.session.path if cfg.session.backend != "memory" else None,
         default_adapter=cfg.defaults.adapter,
         default_model=_resolve_default_model(cfg, catalog),
+        default_workspace=active_ws_name,
     )
     ctx = BotContext(config=cfg, adapters=adapters, catalog=catalog, sessions=sessions)
+    if active_ws_path:
+        _apply_workspace_runtime(ctx, active_ws_name, active_ws_path)
 
     # 4. Build the orchestration layer (skills + memory + agents).
     try:

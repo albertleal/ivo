@@ -319,6 +319,7 @@ def build_application(ctx: BotContext):
     adapter_aliases: set[str] = set(ctx.adapters)
     model_aliases: set[str] = set(ctx.catalog)
     agent_aliases: set[str] = set(ctx.agent_names or [])
+    workspace_shortcuts = H.workspace_shortcuts(ctx)
 
     async def _gate(update: Update) -> bool:
         user = update.effective_user
@@ -375,6 +376,31 @@ def build_application(ctx: BotContext):
                 "🛑 stopped — what's next?"
             )
 
+    async def cmd_workspace(update: Update, c: ContextTypes.DEFAULT_TYPE):
+        if not await _gate(update):
+            return
+        if c.args:
+            msg = await H.handle_workspace_select(
+                ctx,
+                update.effective_user.id,
+                c.args[0],
+            )
+        else:
+            msg = await H.handle_workspace_list(ctx, update.effective_user.id)
+        await update.effective_message.reply_text(msg)
+
+    def make_workspace_handler(workspace_name: str):
+        async def _h(update: Update, _c: ContextTypes.DEFAULT_TYPE):
+            if not await _gate(update):
+                return
+            msg = await H.handle_workspace_select(
+                ctx,
+                update.effective_user.id,
+                workspace_name,
+            )
+            await update.effective_message.reply_text(msg)
+        return _h
+
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("models", cmd_models))
     app.add_handler(CommandHandler("agent", cmd_agent))
@@ -383,6 +409,13 @@ def build_application(ctx: BotContext):
     app.add_handler(CommandHandler("reset", cmd_clear))
     app.add_handler(CommandHandler("voice", cmd_voice))
     app.add_handler(CommandHandler("stop", cmd_stop))
+    app.add_handler(CommandHandler("workspace", cmd_workspace))
+    app.add_handler(CommandHandler("ws", cmd_workspace))
+    for cmd, workspace_name in workspace_shortcuts.items():
+        if cmd in adapter_aliases or cmd in model_aliases or cmd in agent_aliases:
+            log.warning("workspace shortcut /%s shadowed by adapter/model/agent", cmd)
+            continue
+        app.add_handler(CommandHandler(cmd, make_workspace_handler(workspace_name)))
 
     # ── dynamic /<adapter>, /<model>, /<agent> ──────────────────────────────
 
