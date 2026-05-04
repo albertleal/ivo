@@ -44,6 +44,10 @@ ollama_cache/
 # User config (only example is committed)
 config.yaml
 
+# Probe artifacts
+probe-deepseek-v3.1_671b-cloud.jsonl
+probe-deepseek-v3.1_671b-cloud.stderr
+
 # Memory: per-deployment, do not commit (except .gitkeep)
 .ivo/memory/*
 !.ivo/memory/.gitkeep
