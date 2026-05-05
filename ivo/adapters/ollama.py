@@ -35,6 +35,41 @@ from .copilot import STATUS_COOLDOWN, _extract_text, _format_status
 log = logging.getLogger("adapter.ollama")
 
 
+# Patterns that indicate the Ollama cloud free-tier / rate limit was hit.
+# Matched against stderr, response bodies, and JSONL events. Conservative —
+# we want zero false positives on normal model output.
+_LIMIT_PATTERNS = (
+    r"free[\s-]*tier",
+    r"daily\s+limit",
+    r"rate[\s-]*limit",
+    r"too\s+many\s+requests",
+    r"quota\s+exceeded",
+    r"usage\s+limit",
+    r"reached\s+your\s+(?:free|daily|monthly)\s+limit",
+    r"upgrade\s+(?:your\s+)?plan",
+)
+_LIMIT_RE = re.compile("|".join(_LIMIT_PATTERNS), re.IGNORECASE)
+
+
+def _detect_limit(text: str) -> str | None:
+    """Return a short, user-facing limit message if `text` looks like a
+    cloud free-tier / rate-limit error, else None."""
+    if not text:
+        return None
+    m = _LIMIT_RE.search(text)
+    if not m:
+        return None
+    # Pick the most informative single line from the source.
+    snippet = ""
+    for line in text.splitlines():
+        if _LIMIT_RE.search(line):
+            snippet = line.strip().strip("\"'")
+            break
+    if len(snippet) > 240:
+        snippet = snippet[:237] + "…"
+    return snippet or m.group(0)
+
+
 def _alias_for(model_id: str) -> str:
     """Default alias = first word of id, lower-snake-case."""
     head = model_id.split(":", 1)[0]
@@ -149,6 +184,18 @@ class OllamaAdapter(Adapter):
                         log.error(
                             "ollama %s for model=%s body=%s", r.status_code, model, body
                         )
+                        # Cloud free-tier / rate-limit detection — friendly,
+                        # actionable message instead of a raw HTTP body.
+                        limit_msg = _detect_limit(body)
+                        if limit_msg is None and r.status_code in (402, 429):
+                            limit_msg = body or f"HTTP {r.status_code}"
+                        if limit_msg:
+                            yield (
+                                f"⚠️ Ollama cloud free limit reached for "
+                                f"`{model}` — {limit_msg}. Try a local model "
+                                f"or wait until the quota resets."
+                            )
+                            return
                         # Friendly hint for the known Gemma-cloud failure mode.
                         hint = ""
                         if r.status_code == 500 and "gemma" in model.lower():
@@ -278,6 +325,22 @@ class OllamaAdapter(Adapter):
                 "ollama-copilot failed model=%s rc=%s stderr=%s",
                 model, proc.returncode, err or "<empty>",
             )
+            # Cloud free-tier / rate-limit hits often show up here as a
+            # stderr line; sometimes the actual message is on stdout
+            # (raw_lines) while stderr is just "Error: exit status 1".
+            haystack = err + "\n" + "\n".join(raw_lines[-50:])
+            limit_msg = _detect_limit(haystack)
+            if limit_msg:
+                log.warning(
+                    "ollama-copilot free/rate limit detected model=%s: %s",
+                    model, limit_msg,
+                )
+                yield (
+                    f"⚠️ Ollama cloud free limit reached for `{model}` — "
+                    f"{limit_msg}. Try a local model (e.g. /qwen) or wait "
+                    f"until the quota resets."
+                )
+                return
             yield f"[ollama-copilot error rc={proc.returncode}] {err}"
             return
         # Even on success, surface stderr at WARNING if the subprocess
@@ -312,6 +375,26 @@ class OllamaAdapter(Adapter):
                 "ollama-copilot empty reply model=%s tail_events=%s tail_raw=%s",
                 model, tail_events, tail_raw,
             )
+            # Some cloud rate-limit responses come as rc=0 with an empty
+            # assistant message and the limit string buried in an error
+            # event on stdout (or in stderr).
+            haystack = (
+                (stderr.decode("utf-8", errors="replace") if stderr else "")
+                + "\n"
+                + "\n".join(raw_lines[-50:])
+            )
+            limit_msg = _detect_limit(haystack)
+            if limit_msg:
+                log.warning(
+                    "ollama-copilot free/rate limit detected (empty reply) "
+                    "model=%s: %s", model, limit_msg,
+                )
+                yield (
+                    f"⚠️ Ollama cloud free limit reached for `{model}` — "
+                    f"{limit_msg}. Try a local model (e.g. /qwen) or wait "
+                    f"until the quota resets."
+                )
+                return
             yield f"[ollama-copilot empty reply] model={model} (see logs)"
             return
         if text:
